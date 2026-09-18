@@ -41,25 +41,17 @@
     const COVER_BASE = 'https://uploads.mangadex.org/covers';
     const mainContent = document.getElementById('mainContent');
 
-    // Sử dụng AllOrigins để giải quyết triệt để vấn đề Cloudflare 403 / CORS
-    async function fetchMangaDex(endpoint) {
+    // Sử dụng dịch vụ Proxy chuyên dụng để bypass triệt để CORS & Cloudflare
+    async function fetchApi(endpoint) {
       const targetUrl = `${API_BASE}${endpoint}`;
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+      // Proxy qua API trung gian mở Header Access-Control-Allow-Origin
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
       
       const response = await fetch(proxyUrl);
       if (!response.ok) {
-        throw new Error(`Lỗi kết nối Proxy (${response.status})`);
+        throw new Error(`Lỗi kết nối (${response.status})`);
       }
-      
-      const proxyData = await response.json();
-      // AllOrigins trả về dữ liệu API dạng chuỗi JSON nằm trong thuộc tính contents
-      const data = JSON.parse(proxyData.contents);
-      
-      if (data.errors) {
-        throw new Error(data.errors[0].detail || 'Lỗi từ MangaDex API');
-      }
-      
-      return data;
+      return await response.json();
     }
 
     // 1. TÌM KIẾM TRUYỆN
@@ -71,7 +63,7 @@
 
       try {
         const endpoint = `/manga?title=${encodeURIComponent(query)}&limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive`;
-        const data = await fetchMangaDex(endpoint);
+        const data = await fetchApi(endpoint);
         const mangaList = data.data;
 
         if (!mangaList || mangaList.length === 0) {
@@ -103,7 +95,7 @@
 
       } catch (err) {
         console.error(err);
-        mainContent.innerHTML = `<div class="error">Không thể tải dữ liệu: ${err.message}<br><small>Thử chuyển sang 4G hoặc sử dụng app 1.1.1.1 nếu bị chặn mạng.</small></div>`;
+        mainContent.innerHTML = `<div class="error">Lỗi kết nối: ${err.message}<br><small>Vui lòng thử chuyển sang 4G hoặc bật 1.1.1.1 nếu mạng nhà bạn chặn kết nối.</small></div>`;
       }
     }
 
@@ -113,7 +105,7 @@
 
       try {
         const endpoint = `/manga/${mangaId}/feed?translatedLanguage[]=vi&translatedLanguage[]=en&order[chapter]=asc&limit=50`;
-        const data = await fetchMangaDex(endpoint);
+        const data = await fetchApi(endpoint);
         const chapters = data.data;
 
         let html = `<h3>${mangaTitle}</h3>`;
@@ -149,7 +141,7 @@
 
       try {
         const endpoint = `/at-home/server/${chapterId}`;
-        const serverData = await fetchMangaDex(endpoint);
+        const serverData = await fetchApi(endpoint);
 
         const host = serverData.baseUrl;
         const hash = serverData.chapter.hash;
