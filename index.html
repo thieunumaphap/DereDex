@@ -28,18 +28,31 @@
 <body>
 
   <div class="search-box">
-    <input type="text" id="searchInput" placeholder="Nhập tên truyện (VD: Naruto)..." />
+    <input type="text" id="searchInput" placeholder="Nhập tên (VD: Naruto, One Piece)..." />
     <button onclick="searchManga()">Tìm</button>
   </div>
 
   <div id="mainContent">
-    <div class="status">Nhập tên truyện để tìm kiếm.</div>
+    <div class="status">Nhập tên truyện ở trên để bắt đầu.</div>
   </div>
 
   <script>
     const API_BASE = 'https://api.mangadex.org';
     const COVER_BASE = 'https://uploads.mangadex.org/covers';
+    
+    // Proxy giúp Bypass lỗi CORS do MangaDex không mở header Access-Control-Allow-Origin
+    const PROXY = 'https://corsproxy.io/?';
+
     const mainContent = document.getElementById('mainContent');
+
+    // Hàm gọi API bọc qua Proxy
+    async function fetchApi(targetUrl) {
+      const response = await fetch(PROXY + encodeURIComponent(targetUrl));
+      if (!response.ok) {
+        throw new Error(`Lỗi Server (${response.status})`);
+      }
+      return await response.json();
+    }
 
     // 1. TÌM KIẾM TRUYỆN
     async function searchManga() {
@@ -49,18 +62,8 @@
       mainContent.innerHTML = '<div class="status">Đang tìm kiếm dữ liệu...</div>';
 
       try {
-        // Tạo URL chuẩn định dạng mảng cho MangaDex API
-        const url = new URL(`${API_BASE}/manga`);
-        url.searchParams.append('title', query);
-        url.searchParams.append('limit', '10');
-        url.searchParams.append('includes[]', 'cover_art');
-        url.searchParams.append('contentRating[]', 'safe');
-        url.searchParams.append('contentRating[]', 'suggestive');
-
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Lỗi máy chủ (${response.status})`);
-        
-        const data = await response.json();
+        const targetUrl = `${API_BASE}/manga?title=${encodeURIComponent(query)}&limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive`;
+        const data = await fetchApi(targetUrl);
         const mangaList = data.data;
 
         if (!mangaList || mangaList.length === 0) {
@@ -92,32 +95,24 @@
 
       } catch (err) {
         console.error(err);
-        mainContent.innerHTML = `<div class="error">Không thể kết nối đến MangaDex.<br>Chi tiết: ${err.message}<br><br><small>Mẹo: Nếu dùng Wi-Fi nhà mạng VNPT/Viettel, hãy thử đổi sang 4G hoặc bật Cloudflare 1.1.1.1.</small></div>`;
+        mainContent.innerHTML = `<div class="error">Lỗi tải dữ liệu: ${err.message}<br><small>Vui lòng kiểm tra lại kết nối mạng hoặc đổi sang 4G.</small></div>`;
       }
     }
 
-    // 2. LẤY DANH SÁCH CHƯƠNG (Tiếng Việt & Tiếng Anh)
+    // 2. LẤY DANH SÁCH CHƯƠNG
     async function loadChapters(mangaId, mangaTitle) {
       mainContent.innerHTML = '<div class="status">Đang tải danh sách chương...</div>';
 
       try {
-        const url = new URL(`${API_BASE}/manga/${mangaId}/feed`);
-        url.searchParams.append('translatedLanguage[]', 'vi');
-        url.searchParams.append('translatedLanguage[]', 'en');
-        url.searchParams.append('order[chapter]', 'asc');
-        url.searchParams.append('limit', '50');
-
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Lỗi (${response.status})`);
-
-        const data = await response.json();
+        const targetUrl = `${API_BASE}/manga/${mangaId}/feed?translatedLanguage[]=vi&translatedLanguage[]=en&order[chapter]=asc&limit=50`;
+        const data = await fetchApi(targetUrl);
         const chapters = data.data;
 
         let html = `<h3>${mangaTitle}</h3>`;
-        html += `<button class="nav-btn" onclick="searchManga()">← Quay lại tìm kiếm</button>`;
+        html += `<button class="nav-btn" onclick="searchManga()">← Quay lại danh sách</button>`;
 
         if (!chapters || chapters.length === 0) {
-          html += '<div class="status">Chưa có chương Tiếng Việt hoặc Tiếng Anh cho truyện này.</div>';
+          html += '<div class="status">Không tìm thấy chương Tiếng Việt hoặc Tiếng Anh cho truyện này.</div>';
         } else {
           chapters.forEach(chap => {
             const num = chap.attributes.chapter ? `Chương ${chap.attributes.chapter}` : 'Oneshot';
@@ -136,19 +131,18 @@
 
       } catch (err) {
         console.error(err);
-        mainContent.innerHTML = `<div class="error">Lỗi khi tải danh sách chương: ${err.message}</div>`;
+        mainContent.innerHTML = `<div class="error">Lỗi khi tải chương: ${err.message}</div>`;
       }
     }
 
-    // 3. ĐỌC CHƯƠNG (Tải ảnh)
+    // 3. ĐỌC ẢNH CHƯƠNG
     async function readChapter(chapterId) {
-      mainContent.innerHTML = '<div class="status">Đang tải trang ảnh...</div>';
+      mainContent.innerHTML = '<div class="status">Đang lấy đường dẫn trang ảnh...</div>';
 
       try {
-        const response = await fetch(`${API_BASE}/at-home/server/${chapterId}`);
-        if (!response.ok) throw new Error(`Lỗi server (${response.status})`);
+        const targetUrl = `${API_BASE}/at-home/server/${chapterId}`;
+        const serverData = await fetchApi(targetUrl);
 
-        const serverData = await response.json();
         const host = serverData.baseUrl;
         const hash = serverData.chapter.hash;
         const pageFiles = serverData.chapter.data;
@@ -157,7 +151,7 @@
         
         pageFiles.forEach(file => {
           const imgPath = `${host}/data/${hash}/${file}`;
-          html += `<img src="${imgPath}" loading="lazy" alt="Page" />`;
+          html += `<img src="${imgPath}" loading="lazy" alt="Trang truyện" />`;
         });
 
         html += `</div>`;
@@ -166,7 +160,7 @@
 
       } catch (err) {
         console.error(err);
-        mainContent.innerHTML = `<div class="error">Lỗi khi đọc ảnh: ${err.message}</div>`;
+        mainContent.innerHTML = `<div class="error">Lỗi tải ảnh chương: ${err.message}</div>`;
       }
     }
 
