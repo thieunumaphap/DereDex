@@ -41,18 +41,25 @@
     const COVER_BASE = 'https://uploads.mangadex.org/covers';
     const mainContent = document.getElementById('mainContent');
 
-    // Hàm gọi trực tiếp API MangaDex (không dùng Proxy)
+    // Sử dụng AllOrigins để giải quyết triệt để vấn đề Cloudflare 403 / CORS
     async function fetchMangaDex(endpoint) {
-      const response = await fetch(`${API_BASE}${endpoint}`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json'
-        }
-      });
+      const targetUrl = `${API_BASE}${endpoint}`;
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+      
+      const response = await fetch(proxyUrl);
       if (!response.ok) {
-        throw new Error(`Lỗi Server (${response.status})`);
+        throw new Error(`Lỗi kết nối Proxy (${response.status})`);
       }
-      return await response.json();
+      
+      const proxyData = await response.json();
+      // AllOrigins trả về dữ liệu API dạng chuỗi JSON nằm trong thuộc tính contents
+      const data = JSON.parse(proxyData.contents);
+      
+      if (data.errors) {
+        throw new Error(data.errors[0].detail || 'Lỗi từ MangaDex API');
+      }
+      
+      return data;
     }
 
     // 1. TÌM KIẾM TRUYỆN
@@ -60,7 +67,7 @@
       const query = document.getElementById('searchInput').value.trim();
       if (!query) return;
 
-      mainContent.innerHTML = '<div class="status">Đang tìm kiếm dữ liệu...</div>';
+      mainContent.innerHTML = '<div class="status">Đang kết nối MangaDex...</div>';
 
       try {
         const endpoint = `/manga?title=${encodeURIComponent(query)}&limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive`;
@@ -96,7 +103,7 @@
 
       } catch (err) {
         console.error(err);
-        mainContent.innerHTML = `<div class="error">Lỗi kết nối MangaDex: ${err.message}<br><small>Lưu ý: Nếu dùng Wi-Fi nhà mạng VNPT/Viettel bị chặn, hãy chuyển sang 4G hoặc bật app 1.1.1.1 (WARP).</small></div>`;
+        mainContent.innerHTML = `<div class="error">Không thể tải dữ liệu: ${err.message}<br><small>Thử chuyển sang 4G hoặc sử dụng app 1.1.1.1 nếu bị chặn mạng.</small></div>`;
       }
     }
 
@@ -113,7 +120,7 @@
         html += `<button class="nav-btn" onclick="searchManga()">← Quay lại danh sách</button>`;
 
         if (!chapters || chapters.length === 0) {
-          html += '<div class="status">Không tìm thấy chương Tiếng Việt hoặc Tiếng Anh cho truyện này.</div>';
+          html += '<div class="status">Không tìm thấy chương Tiếng Việt hoặc Tiếng Anh.</div>';
         } else {
           chapters.forEach(chap => {
             const num = chap.attributes.chapter ? `Chương ${chap.attributes.chapter}` : 'Oneshot';
@@ -132,7 +139,7 @@
 
       } catch (err) {
         console.error(err);
-        mainContent.innerHTML = `<div class="error">Lỗi tải chương: ${err.message}</div>`;
+        mainContent.innerHTML = `<div class="error">Lỗi tải danh sách chương: ${err.message}</div>`;
       }
     }
 
